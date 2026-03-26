@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Abyssrium Flight: Bubble & Impact Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+        body { margin: 0; padding: 0; overflow: hidden; background: #b2ebf2; font-family: 'Nanum Gothic', sans-serif; user-select: none; touch-action: none; }
+        canvas { display: block; margin: 0 auto; background: radial-gradient(circle at center, #e0f7fa 0%, #80deea 50%, #4dd0e1 100%); }
+        #ui-layer { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 500px; height: 100%; pointer-events: none; z-index: 10; }
+        .interactive { pointer-events: auto; }
+        .glass-panel { background: rgba(255, 255, 255, 0.4); backdrop-filter: blur(8px); border: 2px solid rgba(255, 255, 255, 0.6); border-radius: 30px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
+        .glow-text { color: #00838f; text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 2px 2px 4px rgba(0,0,0,0.1); }
+        #effect-overlay { position: absolute; bottom: 25%; left: 50%; transform: translateX(-50%); font-size: 100px; font-weight: 900; color: rgba(255, 255, 255, 0.5); font-style: italic; transition: all 0.15s ease-out; pointer-events: none; z-index: 5; text-shadow: 0 0 20px rgba(255,255,255,1); }
+        #ranking-table { width: 100%; border-collapse: collapse; margin-top: 15px; color: #00838f; font-size: 14px; }
+        #ranking-table th, #ranking-table td { text-align: center; padding: 8px; border-bottom: 1px solid rgba(0, 131, 143, 0.1); }
+        .char-card { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; }
+        .char-card:hover { transform: scale(1.1); background: rgba(255, 255, 255, 0.6); }
+
+        /* HP 및 게이지 스타일 */
+        #hp-container { width: 140px; height: 14px; background: rgba(255,255,255,0.3); border-radius: 7px; border: 1px solid rgba(255,255,255,0.6); overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
+        #hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #4dd0e1, #00acc1); transition: width 0.4s ease-out; }
+        #mega-bar-container { width: 80px; height: 6px; background: rgba(0,0,0,0.1); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+        #mega-bar { width: 0%; height: 100%; background: #00e5ff; transition: width 0.3s; box-shadow: 0 0 10px #00e5ff; }
+        .mega-active-anim { animation: pulse-blue 0.5s infinite; }
+        @keyframes pulse-blue { 0%, 100% { background: #00e5ff; } 50% { background: #ffffff; } }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <!-- 상단 HUD -->
+    <div id="game-hud" class="hidden p-8 flex justify-between items-start text-cyan-900">
+        <div class="flex flex-col gap-3 text-left">
+            <div class="flex flex-col">
+                <span class="text-[8px] tracking-[0.2em] opacity-60 uppercase font-black ml-1 mb-1">Energy</span>
+                <div id="hp-container"><div id="hp-fill"></div></div>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[9px] tracking-[0.2em] opacity-50 uppercase font-bold">Distance</span>
+                <span id="score-display" class="text-2xl font-black italic glow-text leading-none">0m</span>
+            </div>
+        </div>
+        
+        <div class="flex flex-col items-center">
+            <span id="hud-nickname" class="px-4 py-1 bg-white/30 rounded-full text-xs font-bold border border-white/50 backdrop-blur-sm shadow-sm mb-2"></span>
+            <div class="flex gap-2 mb-2">
+                <div class="flex flex-col items-center bg-white/20 px-2 py-1 rounded-lg border border-white/20">
+                    <span class="text-[7px] font-black opacity-80 uppercase leading-none mb-1">Squid: <span id="squid-count">0</span>/10</span>
+                    <div id="mega-bar-container"><div id="mega-bar"></div></div>
+                </div>
+                <div class="flex flex-col items-center bg-white/20 px-2 py-1 rounded-lg border border-white/20">
+                    <span class="text-[7px] font-black opacity-80 uppercase leading-none mb-1">Heal: <span id="heal-count">0</span>/30</span>
+                    <div class="w-12 h-1 bg-white/30 rounded-full overflow-hidden"><div id="heal-bar" class="h-full bg-green-400 w-0 transition-all"></div></div>
+                </div>
+            </div>
+            <span id="miss-container" class="text-[9px] font-black tracking-widest bg-white/40 px-3 py-1 rounded-full border border-white/30 shadow-sm">
+                MISS: <span id="miss-count">0</span>/10
+            </span>
+        </div>
+
+        <div class="flex flex-col items-end">
+            <span class="text-[10px] tracking-[0.3em] opacity-70 uppercase font-bold text-shadow text-right">Pearls</span>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 bg-yellow-300 rounded-full shadow-[0_0_10px_white] border border-white"></div>
+                <span id="gold-display" class="text-2xl font-black glow-text">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="effect-overlay"></div>
+
+    <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-white/20 backdrop-blur-sm interactive">
+        <div class="mb-12 relative scale-125">
+            <svg viewBox="0 0 100 100" class="w-40 h-40 filter drop-shadow-[0_10px_15px_rgba(0,0,0,0.1)]">
+                <path d="M50,15 C25,15 10,35 10,60 C10,85 25,95 50,95 C75,95 90,85 90,60 C90,35 75,15 50,15 Z" fill="#81d4fa" />
+                <path d="M20,65 C20,85 30,92 50,92 C70,92 80,85 80,65 C80,55 70,50 50,50 C30,50 20,55 20,65 Z" fill="#ffffff" />
+                <circle cx="30" cy="55" r="4.5" fill="#333" /><circle cx="70" cy="55" r="4.5" fill="#333" />
+                <path d="M45,62 Q50,65 55,62" stroke="#ff8a80" stroke-width="2" fill="none" stroke-linecap="round" />
+            </svg>
+        </div>
+        <h1 class="text-4xl font-black text-cyan-900 mb-2 tracking-tighter italic text-center leading-none uppercase">Abyssrium<br>Flight</h1>
+        <input type="text" id="nickname-input" placeholder="닉네임을 입력하세요" maxlength="8" class="glass-panel px-6 py-4 mb-6 text-cyan-900 font-bold text-center outline-none w-72 placeholder:text-cyan-700/60 shadow-inner">
+        <button id="start-btn" class="glass-panel px-16 py-5 text-cyan-900 font-black text-xl transition-all hover:scale-110 active:scale-95 shadow-lg">다음으로</button>
+    </div>
+
+    <div id="selection-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-white/20 backdrop-blur-md hidden interactive p-6">
+        <h2 class="text-3xl font-black text-cyan-900 mb-2 italic text-center uppercase tracking-tighter text-shadow">Choose Your Whale</h2>
+        <div class="flex gap-6 mb-10 mt-8">
+            <div onclick="selectWhale('#81d4fa')" class="char-card glass-panel p-6 flex flex-col items-center w-40">
+                <svg viewBox="0 0 100 100" class="w-24 h-24 mb-4"><path d="M50,15 C25,15 10,35 10,60 C10,85 25,95 50,95 C75,95 90,85 90,60 C90,35 75,15 50,15 Z" fill="#81d4fa" /><path d="M20,65 C20,85 30,92 50,92 C70,92 80,85 80,65 C80,55 70,50 50,50 C30,50 20,55 20,65 Z" fill="#ffffff" /><circle cx="30" cy="55" r="4.5" fill="#333" /><circle cx="70" cy="55" r="4.5" fill="#333" /></svg>
+                <span class="font-black text-cyan-800">BLUE</span>
+            </div>
+            <div onclick="selectWhale('#f48fb1')" class="char-card glass-panel p-6 flex flex-col items-center w-40 border-pink-200">
+                <svg viewBox="0 0 100 100" class="w-24 h-24 mb-4"><path d="M50,15 C25,15 10,35 10,60 C10,85 25,95 50,95 C75,95 90,85 90,60 C90,35 75,15 50,15 Z" fill="#f48fb1" /><path d="M20,65 C20,85 30,92 50,92 C70,92 80,85 80,65 C80,55 70,50 50,50 C30,50 20,55 20,65 Z" fill="#ffffff" /><circle cx="30" cy="55" r="4.5" fill="#333" /><circle cx="70" cy="55" r="4.5" fill="#333" /></svg>
+                <span class="font-black text-pink-500">PINK</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="guide-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md hidden interactive p-6">
+        <div class="glass-panel p-10 w-full max-w-md flex flex-col items-center shadow-2xl my-auto">
+            <h2 class="text-2xl font-black text-cyan-900 mb-6 uppercase italic tracking-tighter">Ready to Voyage?</h2>
+            <div class="text-cyan-900 text-[14px] space-y-3 mb-8 font-bold leading-snug w-full">
+                <div class="bg-white/40 p-3 rounded-2xl border border-white/60 shadow-sm flex items-center gap-4">
+                    <span class="text-xl">⚠️</span>
+                    <p><b>에너지 감소:</b> 친구와 충돌 시 <b>30%</b> 감소!<br><span class="text-[11px] opacity-70">에너지가 0이 되면 탐험이 종료됩니다.</span></p>
+                </div>
+                <div class="bg-white/40 p-3 rounded-2xl border border-white/60 shadow-sm flex items-center gap-4">
+                    <span class="text-xl">💖</span>
+                    <p><b>에너지 회복:</b> 친구 <b>30마리</b> 정화 시 <b>10%</b> 회복!<br><span class="text-[11px] opacity-70">정성껏 친구들을 정화하며 에너지를 관리하세요!</span></p>
+                </div>
+                <div class="bg-white/40 p-3 rounded-2xl border border-white/60 shadow-sm flex items-center gap-4">
+                    <span class="text-xl">🐳</span>
+                    <p><b>조작방법:</b> 키보드 방향키(←↑→)로 이동!<br><span class="text-[11px] opacity-70">↑ 키를 눌러 앞으로 전진할 수 있습니다!</span></p>
+                </div>
+                <div class="bg-white/40 p-3 rounded-2xl border border-white/60 shadow-sm flex items-center gap-4">
+                    <span class="text-xl">🦑</span>
+                    <p><b>메가 어택:</b> 오징어 <b>10마리</b> 사냥 시<br><span class="text-[11px] opacity-70">3초간 무적 광역 공격이 발동됩니다!</span></p>
+                </div>
+            </div>
+            <button id="guide-confirm-btn" class="w-full py-4 bg-cyan-900 text-white rounded-full font-black text-lg shadow-xl transition-all hover:scale-105 active:scale-95">확인했습니다!</button>
+        </div>
+    </div>
+
+    <div id="gameover-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-white/40 backdrop-blur-md hidden interactive p-10">
+        <h2 id="gameover-title" class="text-4xl font-black text-cyan-900 mb-6 italic glow-text text-center leading-tight"></h2>
+        <div class="glass-panel p-8 mb-8 text-center w-full max-w-sm">
+            <p id="player-result" class="text-cyan-900 font-bold mb-1"></p>
+            <p id="final-score" class="text-5xl font-black text-cyan-900 mb-6 italic text-shadow">0m</p>
+            <div class="h-[2px] bg-cyan-900/10 w-full mb-6"></div>
+            <p class="text-cyan-800 text-[10px] tracking-[0.3em] font-bold uppercase mb-2 text-center">Top 5 Explorers</p>
+            <table id="ranking-table"><tbody id="ranking-body"></tbody></table>
+        </div>
+        <button id="retry-btn" class="px-14 py-4 bg-cyan-900 text-white rounded-full font-black text-lg shadow-xl transition-all hover:scale-110 active:scale-95">다시 도전</button>
+    </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score-display');
+    const goldDisplay = document.getElementById('gold-display');
+    const hudNickname = document.getElementById('hud-nickname');
+    const missCountDisplay = document.getElementById('miss-count');
+    const squidCountDisplay = document.getElementById('squid-count');
+    const healCountDisplay = document.getElementById('heal-count');
+    const hpFill = document.getElementById('hp-fill');
+    const healBar = document.getElementById('heal-bar');
+    const megaBar = document.getElementById('mega-bar');
+    const effectOverlay = document.getElementById('effect-overlay');
+    const startScreen = document.getElementById('start-screen');
+    const selectionScreen = document.getElementById('selection-screen');
+    const guideScreen = document.getElementById('guide-screen');
+    const gameoverScreen = document.getElementById('gameover-screen');
+    const gameoverTitle = document.getElementById('gameover-title');
+    const rankingBody = document.getElementById('ranking-body');
+    const gameHud = document.getElementById('game-hud');
+    
+    let width, height, gameState = 'ready', score = 0, gold = 0, frameCount = 0, missedCount = 0;
+    let playerNickname = "", playerColor = "#81d4fa", squidKills = 0, healKills = 0, megaAttackTimeLeft = 0;
+    let playerHp = 100, invincibleFrames = 0, screenShake = 0;
+    
+    // ✨ 기포(Bubbles) 시스템
+    let bgBubbles = [];
+    const BUBBLE_COUNT = 25;
+
+    const MAX_MISSES = 10, SQUID_TARGET = 10, HEAL_TARGET = 30;
+    const player = { x: 0, y: 0, baseY: 0, width: 80, height: 100, wiggle: 0, tilt: 0, boost: 0, speed: 9 };
+    const keys = { Left: false, Right: false, Up: false };
+    let bullets = [], enemies = [], marineSnow = [], backgroundAssets = [];
+    const LANES = 5; let laneWidth;
+    const ENEMY_TYPES = ['crab', 'squid', 'cuttlefish', 'ribbonfish', 'dumbo'];
+
+    function init() {
+        resize(); window.addEventListener('resize', resize);
+        window.addEventListener('keydown', (e) => { if (e.code === 'ArrowLeft') keys.Left = true; if (e.code === 'ArrowRight') keys.Right = true; if (e.code === 'ArrowUp') keys.Up = true; });
+        window.addEventListener('keyup', (e) => { if (e.code === 'ArrowLeft') keys.Left = false; if (e.code === 'ArrowRight') keys.Right = false; if (e.code === 'ArrowUp') keys.Up = false; });
+        document.getElementById('start-btn').onclick = showSelection;
+        document.getElementById('guide-confirm-btn').onclick = startGame;
+        document.getElementById('retry-btn').onclick = showStartScreen;
+        
+        // 기포 초기화
+        for(let i=0; i<BUBBLE_COUNT; i++) {
+            bgBubbles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                size: Math.random() * 5 + 2,
+                speed: Math.random() * 1.5 + 0.5,
+                sway: Math.random() * 15 + 5,
+                offset: Math.random() * Math.PI * 2
+            });
+        }
+        for(let i=0; i<50; i++) marineSnow.push({ x: Math.random() * width, y: Math.random() * height, size: Math.random() * 3 + 1, speed: Math.random() * 0.5 + 0.2, opacity: Math.random() * 0.6 + 0.2 });
+        for(let i=0; i<4; i++) backgroundAssets.push({ x: Math.random() * width, y: height + Math.random() * 600, type: Math.random() > 0.6 ? 'temple' : 'coral', speed: 0.6 + Math.random() * 0.4, scale: 0.8 + Math.random() * 0.5 });
+    }
+
+    function resize() { width = Math.min(window.innerWidth, 500); height = window.innerHeight; canvas.width = width; canvas.height = height; laneWidth = width / LANES; player.x = width / 2; player.baseY = height - 150; player.y = player.baseY; }
+
+    function showSelection() {
+        const inputName = document.getElementById('nickname-input').value.trim();
+        if (!inputName) { alert("닉네임을 먼저 입력해 주세요!"); return; }
+        playerNickname = inputName;
+        startScreen.classList.add('hidden');
+        selectionScreen.classList.remove('hidden');
+    }
+
+    function selectWhale(color) { playerColor = color; selectionScreen.classList.add('hidden'); guideScreen.classList.remove('hidden'); }
+
+    function startGame() {
+        guideScreen.classList.add('hidden');
+        hudNickname.innerText = playerNickname;
+        gameHud.classList.remove('hidden');
+        gameState = 'playing'; score = 0; gold = 0; frameCount = 0; missedCount = 0; squidKills = 0; healKills = 0;
+        playerHp = 100; invincibleFrames = 0; player.y = player.baseY;
+        updateHpUI(); updateMegaUI(); updateHealUI();
+        missCountDisplay.innerText = missedCount;
+        enemies = []; bullets = [];
+        requestAnimationFrame(gameLoop);
+    }
+
+    function showStartScreen() { gameoverScreen.classList.add('hidden'); gameHud.classList.add('hidden'); startScreen.classList.remove('hidden'); }
+
+    function updateHpUI() { hpFill.style.width = playerHp + "%"; }
+    function updateMegaUI() { 
+        if (megaAttackTimeLeft > 0) megaBar.style.width = (megaAttackTimeLeft / 180) * 100 + "%"; 
+        else megaBar.style.width = (squidKills / SQUID_TARGET) * 100 + "%"; 
+        squidCountDisplay.innerText = squidKills;
+    }
+    function updateHealUI() { healCountDisplay.innerText = healKills; healBar.style.width = (healKills / HEAL_TARGET) * 100 + "%"; }
+
+    // ✨ 기포 그리기
+    function drawBubbles() {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        bgBubbles.forEach(b => {
+            b.y -= b.speed;
+            const swayX = Math.sin(frameCount * 0.02 + b.offset) * b.sway;
+            if (b.y < -10) { b.y = height + 10; b.x = Math.random() * width; }
+            ctx.beginPath();
+            ctx.arc(b.x + swayX, b.y, b.size, 0, Math.PI * 2);
+            ctx.fill();
+            // 기포 하이라이트 효과
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.beginPath();
+            ctx.arc(b.x + swayX - b.size*0.3, b.y - b.size*0.3, b.size*0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        });
+    }
+
+    function drawGoldfishBullet(x, y, frame) { ctx.save(); ctx.translate(x, y); const wiggle = Math.sin(frame * 0.25) * 4; ctx.fillStyle = '#FF9500'; ctx.beginPath(); ctx.ellipse(0, 0, 9, 13, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(0, 10); ctx.quadraticCurveTo(wiggle, 22, -10, 24); ctx.quadraticCurveTo(0, 20, 10, 24); ctx.quadraticCurveTo(wiggle, 22, 0, 10); ctx.fill(); ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-4, -7, 3, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(-4, -7, 1.2, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+    function drawBackgroundAsset(asset) { ctx.save(); ctx.translate(asset.x, asset.y); ctx.scale(asset.scale, asset.scale); ctx.globalAlpha = 0.4; ctx.fillStyle = '#b2ebf2'; if (asset.type === 'temple') { ctx.fillRect(-60, -10, 120, 20); ctx.fillRect(-50, -50, 15, 40); ctx.fillRect(35, -50, 15, 40); } else { ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-40, -60, 0, -120); ctx.quadraticCurveTo(40, -60, 0, 0); ctx.fill(); } ctx.restore(); }
+    
+    function drawSeafoodEnemy(e, frame) {
+        ctx.save(); ctx.translate(e.x, e.y); const wiggle = Math.sin(frame * 0.15 + e.x) * 5;
+        if (e.isDead) { ctx.globalAlpha = e.deathTimer / 20; e.y -= 1; }
+        if (e.flashFrames > 0) { ctx.filter = 'brightness(200%) contrast(150%)'; e.flashFrames--; }
+        switch(e.type) {
+            case 'crab': ctx.fillStyle = '#ff7043'; ctx.beginPath(); ctx.ellipse(0, 0, 25, 18, 0, 0, Math.PI*2); ctx.fill(); break;
+            case 'squid': ctx.fillStyle = '#fce4ec'; ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(-18, 0); ctx.lineTo(18, 0); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.ellipse(0, 5, 15, 12, 0, 0, Math.PI*2); ctx.fill(); break;
+            case 'cuttlefish': ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(0, 0, 15, 22, 0, 0, Math.PI*2); ctx.fill(); break;
+            case 'ribbonfish': ctx.fillStyle = '#e0e0e0'; ctx.beginPath(); ctx.moveTo(0, -35); ctx.quadraticCurveTo(wiggle, -15, 0, 45); ctx.lineWidth = 10; ctx.strokeStyle = '#e0e0e0'; ctx.stroke(); break;
+            case 'dumbo': ctx.fillStyle = '#d1c4e9'; ctx.beginPath(); ctx.ellipse(0, 0, 20, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(-18, -10, 8, 5, 0.4, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(18, -10, 8, 5, -0.4, 0, Math.PI*2); ctx.fill(); break;
+        }
+        if (e.isDead) { 
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 2; 
+            ctx.beginPath(); ctx.moveTo(-9, -8); ctx.lineTo(-3, -2); ctx.moveTo(-3, -8); ctx.lineTo(-9, -2);
+            ctx.moveTo(3, -8); ctx.lineTo(9, -2); ctx.moveTo(9, -8); ctx.lineTo(3, -2); ctx.stroke(); 
+        } else if (e.type !== 'ribbonfish') {
+            ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-6,-5,2.5,0,Math.PI*2); ctx.arc(6,-5,2.5,0,Math.PI*2); ctx.fill(); 
+        }
+        ctx.restore();
+    }
+
+    function drawWhaleShark(x, y, tilt, wiggle, boost) {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+        const sY = 1 + Math.sin(wiggle) * 0.06 + (boost * 0.12); ctx.scale(1 - Math.sin(wiggle)*0.03, sY);
+        if (invincibleFrames > 0 && Math.floor(frameCount / 5) % 2 === 0) ctx.globalAlpha = 0.3;
+        if (megaAttackTimeLeft > 0) { ctx.shadowBlur = 40; ctx.shadowColor = '#00e5ff'; ctx.fillStyle = 'rgba(0, 229, 255, 0.2)'; ctx.beginPath(); ctx.arc(0, 0, 140, 0, Math.PI*2); ctx.fill(); } else { ctx.shadowBlur = 25; ctx.shadowColor = 'white'; }
+        ctx.fillStyle = playerColor; ctx.beginPath(); ctx.ellipse(0, 0, 35, 50, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(0, 18, 25, 30, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-18, -5, 5, 0, Math.PI*2); ctx.arc(18, -5, 5, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(-19.5, -6.5, 1.5, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(16.5, -6.5, 1.5, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#ff8a80'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 5, 5, 0.2, Math.PI - 0.2); ctx.stroke();
+        ctx.fillStyle = playerColor; ctx.save(); ctx.translate(-35, 10); ctx.rotate(-0.4 + Math.sin(wiggle)*0.2); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-20, 5, -25, 20); ctx.quadraticCurveTo(-5, 15, 0, 10); ctx.fill(); ctx.restore();
+        ctx.save(); ctx.translate(35, 10); ctx.rotate(0.4 - Math.sin(wiggle)*0.2); ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(20, 5, 25, 20); ctx.quadraticCurveTo(5, 15, 0, 10); ctx.fill(); ctx.restore();
+        ctx.restore();
+    }
+
+    function gameLoop() {
+        if (gameState !== 'playing') return;
+        ctx.save();
+        if (screenShake > 0) { ctx.translate((Math.random()-0.5)*screenShake, (Math.random()-0.5)*screenShake); screenShake *= 0.9; if (screenShake < 0.5) screenShake = 0; }
+        ctx.clearRect(0, 0, width, height); frameCount++;
+        
+        // ✨ 배경 효과 (기포 및 산호)
+        backgroundAssets.forEach(a => { a.y -= (a.speed + (keys.Up ? 3 : 0)); if (a.y < -200) { a.y = height + 200; a.x = Math.random() * width; } drawBackgroundAsset(a); });
+        drawBubbles();
+        ctx.fillStyle = 'white'; marineSnow.forEach(s => { s.y += s.speed; if (s.y > height) { s.y = -10; s.x = Math.random() * width; } ctx.globalAlpha = s.opacity; ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; });
+        
+        if (megaAttackTimeLeft > 0) { megaAttackTimeLeft--; updateMegaUI(); }
+        if (invincibleFrames > 0) invincibleFrames--;
+
+        let currentEffect = "";
+        if (keys.Left) { player.x -= player.speed; player.tilt = -0.3; currentEffect = "1"; } else if (keys.Right) { player.x += player.speed; player.tilt = 0.3; currentEffect = "3"; } else { player.tilt *= 0.82; }
+        if (keys.Up) { player.y = Math.max(height * 0.3, player.y - 4); player.boost = 1; score += 2.5; currentEffect = "5"; } else { player.y = Math.min(player.baseY, player.y + 2); player.boost *= 0.88; }
+        if (megaAttackTimeLeft > 0) currentEffect = "MEGA!";
+        effectOverlay.innerText = currentEffect; player.x = Math.max(45, Math.min(width - 45, player.x)); player.wiggle += 0.18;
+
+        if (frameCount % 8 === 0) bullets.push({ x: player.x, y: player.y - 50 });
+        bullets.forEach((b, bi) => { b.y -= 12; drawGoldfishBullet(b.x, b.y, frameCount + bi); if (b.y < -50) bullets.splice(bi, 1); });
+        if (frameCount % 40 === 0) enemies.push({ x: Math.random()*(width-80)+40, y: -60, type: ENEMY_TYPES[Math.floor(Math.random() * 5)], hp: 3, speed: 2.5 + (score/8000), isDead: false, deathTimer: 0, flashFrames: 0 });
+
+        enemies.forEach((e, ei) => {
+            if (!e.isDead) {
+                e.y += e.speed + (keys.Up ? 1.5 : 0); drawSeafoodEnemy(e, frameCount);
+                if (megaAttackTimeLeft > 0 && Math.hypot(e.x - player.x, e.y - player.y) < 140) { e.isDead = true; e.deathTimer = 20; score += 150; gold++; handleKill(e.type); screenShake = 5; }
+                bullets.forEach((b, bi) => { if (Math.hypot(e.x - b.x, e.y - b.y) < 40) { e.hp--; e.flashFrames = 3; bullets.splice(bi, 1); if (e.hp <= 0) { e.isDead = true; e.deathTimer = 20; score += 200; gold++; handleKill(e.type); screenShake = 3; } } });
+                if (Math.hypot(e.x - player.x, e.y - player.y) < 45 && megaAttackTimeLeft === 0 && invincibleFrames === 0) {
+                    playerHp -= 30; invincibleFrames = 60; updateHpUI(); screenShake = 15;
+                    if (playerHp <= 0) gameOver("collision");
+                }
+                if (e.y > height + 60) { enemies.splice(ei, 1); missedCount++; missCountDisplay.innerText = missedCount; if (missedCount >= MAX_MISSES) gameOver("missed_too_many"); }
+            } else { drawSeafoodEnemy(e, frameCount); e.deathTimer--; if (e.deathTimer <= 0) enemies.splice(ei, 1); }
+        });
+
+        drawWhaleShark(player.x, player.y, player.tilt, player.wiggle, player.boost);
+        score += 0.8; scoreDisplay.innerText = Math.floor(score) + 'm'; goldDisplay.innerText = gold;
+        ctx.restore();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function handleKill(type) {
+        if (type === 'squid' && megaAttackTimeLeft === 0) { squidKills++; if (squidKills >= SQUID_TARGET) { megaAttackTimeLeft = 180; squidKills = 0; screenShake = 10; } updateMegaUI(); }
+        healKills++; if (healKills >= HEAL_TARGET) { playerHp = Math.min(100, playerHp + 10); healKills = 0; updateHpUI(); } updateHealUI();
+    }
+
+    function gameOver(reason) {
+        gameState = 'gameover'; gameoverScreen.classList.remove('hidden');
+        gameoverTitle.innerText = reason === "collision" ? "에너지가 고갈되었어요!" : "친구들을 너무 많이 놓쳤어요!";
+        const finalScore = Math.floor(score);
+        document.getElementById('player-result').innerText = `${playerNickname}님의 기록`;
+        document.getElementById('final-score').innerText = `${finalScore}m`;
+        saveScore(playerNickname, finalScore); displayRanking();
+    }
+
+    function saveScore(name, score) { let rank = JSON.parse(localStorage.getItem('abyssrium_ranking')) || []; rank.push({ name, score }); rank.sort((a,b) => b.score - a.score); localStorage.setItem('abyssrium_ranking', JSON.stringify(rank.slice(0, 5))); }
+    function displayRanking() { rankingBody.innerHTML = ''; const rank = JSON.parse(localStorage.getItem('abyssrium_ranking')) || []; rank.forEach((d, i) => { rankingBody.innerHTML += `<tr><td class="rank-${i+1} font-bold text-cyan-700">${i+1}</td><td class="text-cyan-900 font-medium">${d.name}</td><td class="font-black text-cyan-800">${d.score}m</td></tr>`; }); }
+    window.onload = init;
+</script>
+</body>
+</html>
